@@ -1,25 +1,74 @@
-// A working gta6-meme-x-01 entry (Node 22, standard library only): it copies POST.json from the repository root to
-// /output/POST.json, where the gate reads it. That is all the program has to do. The entry is the post itself: your
-// agent makes a GTA 6 meme, it is posted on X from a public account with make.fun (a link or written out) and/or a
-// tag of @makefunai and your play code in its text, POST.json names the post, and the house reads the post from X (its
-// first picture and its text) and hands that to the judge. Nothing this program writes about the post is judged.
+// main.ts — titik masuk entry make.fun gta6-meme-x-01.
 //
-// The POST.json this starter ships holds a placeholder address, so the gate refuses it as it stands (valid 0).
-// Replace it with your post's address before you submit.
+// Entry bounty ini adalah postingan X itu sendiri: berkas POST.json di
+// direktori bot menamai URL postingan tersebut, dan grader membaca
+// POST.json dari direktori output. Jadi satu-satunya tugas program ini
+// adalah menyalin POST.json dari direktori bot ke direktori output,
+// apa adanya, tanpa mengubah satu byte pun.
 //
-// Outside the grader's container, MAKEFUN_BOT_DIR and MAKEFUN_OUTPUT_DIR stand in for /bot and /output:
-//   mkdir -p out && MAKEFUN_BOT_DIR=. MAKEFUN_OUTPUT_DIR=out node main.ts
+// Lokasi kedua direktori bisa diatur lewat environment variable:
+//   MAKEFUN_BOT_DIR     (bawaan: /bot)
+//   MAKEFUN_OUTPUT_DIR  (bawaan: /output)
+// Di luar kontainer grader, kedua variable itu menunjuk ke folder repo
+// dan folder keluaran lokal, misalnya:
+//   MAKEFUN_BOT_DIR=. MAKEFUN_OUTPUT_DIR=out node main.ts
+//
+// Program ini hanya memakai pustaka standar Node, tidak menyentuh
+// jaringan maupun jam sistem, dan selalu menghasilkan keluaran yang
+// sama untuk masukan yang sama.
 
-import { copyFileSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { copyFileSync, existsSync, mkdirSync, statSync } from "node:fs";
+import { join } from "node:path";
 
-const BOT_DIR = process.env.MAKEFUN_BOT_DIR ?? '/bot';
-const OUTPUT_DIR = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
+const POST_FILENAME = "POST.json";
 
-mkdirSync(OUTPUT_DIR, { recursive: true });
-try {
-  copyFileSync(join(BOT_DIR, 'POST.json'), join(OUTPUT_DIR, 'POST.json'));
-} catch (err) {
-  console.error(`POST.json could not be copied from ${BOT_DIR}: ${(err as Error).message}`);
+function botDirectory(): string {
+  return process.env.MAKEFUN_BOT_DIR ?? "/bot";
+}
+
+function outputDirectory(): string {
+  return process.env.MAKEFUN_OUTPUT_DIR ?? "/output";
+}
+
+// Berhenti dengan kode 1 dan pesan yang menjelaskan masalahnya, supaya
+// kegagalan terlihat jelas di log grader alih-alih diam-diam lolos.
+function abort(reason: string): never {
+  console.error(`main.ts: ${reason}`);
   process.exit(1);
 }
+
+function run(): void {
+  const sourcePath = join(botDirectory(), POST_FILENAME);
+  const targetDir = outputDirectory();
+  const targetPath = join(targetDir, POST_FILENAME);
+
+  if (!existsSync(sourcePath)) {
+    abort(`POST.json tidak ditemukan di direktori bot: ${sourcePath}`);
+  }
+
+  // Direktori output mungkin belum ada; buat dulu (beserta induknya).
+  mkdirSync(targetDir, { recursive: true });
+
+  try {
+    copyFileSync(sourcePath, targetPath);
+  } catch (err) {
+    abort(
+      `gagal menyalin ${sourcePath} ke ${targetPath}: ${(err as Error).message}`,
+    );
+  }
+
+  // Verifikasi hasil salinan: ukuran berkas tujuan harus persis sama
+  // dengan sumbernya. Salinan yang terpotong di tengah jalan akan
+  // membuat grader menolak entry, jadi lebih baik gagal keras di sini
+  // dengan pesan jelas daripada menyerahkan berkas yang rusak.
+  const sourceSize = statSync(sourcePath).size;
+  const targetSize = statSync(targetPath).size;
+  if (targetSize !== sourceSize) {
+    abort(
+      `salinan tidak utuh: ${targetPath} berukuran ${targetSize} byte, ` +
+        `padahal sumbernya ${sourceSize} byte`,
+    );
+  }
+}
+
+run();
